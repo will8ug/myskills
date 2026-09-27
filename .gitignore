@@ -8,6 +8,7 @@ badges/
 .vscode/
 .idea/
 .claude/
+.opencode/
 
 .DS_Store
 .env
