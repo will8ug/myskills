@@ -16,6 +16,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "prepare": "npm run build",
     "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
   },
   "dependencies": {

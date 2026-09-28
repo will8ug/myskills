@@ -34,12 +34,20 @@ async function promptSkillsDirectory(deps: ScopeDeps): Promise<string | null> {
     return null;
   }
   if (choice === "typed") {
-    const typed = await p.text({ message: "Project path", placeholder: "~/some/project" });
-    if (p.isCancel(typed) || typed.trim() === "") {
-      return null;
+    // The --project flag hard-errors instead: a scripted run has no prompt to retry.
+    while (true) {
+      const typed = await p.text({ message: "Project path", placeholder: "~/some/project" });
+      if (p.isCancel(typed) || typed.trim() === "") {
+        return null;
+      }
+      try {
+        const resolution = await resolveScope(deps, { project: typed });
+        return resolution.outcome === "resolved" ? resolution.skillsDirectory : null;
+      } catch (error) {
+        if (!(error instanceof ScopeError)) throw error;
+        p.log.error(error.message);
+      }
     }
-    const resolution = await resolveScope(deps, { project: typed });
-    return resolution.outcome === "resolved" ? resolution.skillsDirectory : null;
   }
   const resolution = await resolveScope(deps, choice === "global" ? { global: true } : { project: deps.cwd });
   return resolution.outcome === "resolved" ? resolution.skillsDirectory : null;
@@ -224,6 +232,7 @@ function printUsage(): void {
   console.log(`myskills - manage installed skills
 
 Usage:
+  myskills             with no subcommand, an interactive chooser offers add, delete, and list
   myskills list [--global | --project <path>]
   myskills add [source] [skill...] [--global | --project <path>] [--copy] [--force]
   myskills delete [skill...] [--global | --project <path>] [--force]
@@ -232,6 +241,7 @@ Subcommands:
   list    show what is installed in a skills directory
   add     install skills by name into a skills directory
   delete  delete installed skills from a skills directory
+  help    print this usage
 
 In add, the first positional is the skill source when it contains a path
 separator or starts with ~ or .; bare words are always skill names.
@@ -250,14 +260,39 @@ Install method:
                        different link or a real directory; delete real directories and files`);
 }
 
-async function main(): Promise<void> {
-  const parsed = parseArgv(process.argv.slice(2));
-
-  if (parsed.subcommand === null) {
+async function promptSubcommand(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
+  const choice = await p.select<"add" | "delete" | "list">({
+    message: "What do you want to do?",
+    options: [
+      { value: "add", label: "Add", hint: "install skills from a local skill source" },
+      { value: "delete", label: "Delete", hint: "delete installed skills" },
+      { value: "list", label: "List", hint: "show what is installed" },
+    ],
+  });
+  if (p.isCancel(choice)) {
+    p.cancel("Nothing chosen");
     printUsage();
     return;
   }
+  if (choice === "add") {
+    await runAdd(deps, parsed);
+    return;
+  }
+  if (choice === "delete") {
+    await runDelete(deps, parsed);
+    return;
+  }
+  await runList(deps, parsed);
+}
+
+async function main(): Promise<void> {
+  const parsed = parseArgv(process.argv.slice(2));
   const deps: ScopeDeps = { home: homedir(), cwd: process.cwd(), isDirectory };
+
+  if (parsed.subcommand === null) {
+    await promptSubcommand(deps, parsed);
+    return;
+  }
   if (parsed.subcommand === "add") {
     await runAdd(deps, parsed);
     return;
@@ -270,7 +305,11 @@ async function main(): Promise<void> {
     await runList(deps, parsed);
     return;
   }
-  throw new ArgvError(`Unknown subcommand: ${parsed.subcommand} (available: add, delete, list)`);
+  if (parsed.subcommand === "help") {
+    printUsage();
+    return;
+  }
+  throw new ArgvError(`Unknown subcommand: ${parsed.subcommand} (available: add, delete, list, help)`);
 }
 
 main().catch((error: unknown) => {
