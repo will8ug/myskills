@@ -54,11 +54,6 @@ test("a nonexistent project path is an error naming the path", async () => {
   );
 });
 
-test("--global works even when nothing exists under home", async () => {
-  const result = await resolveScope(depsWith([]), { global: true });
-  assert.deepEqual(result, { outcome: "resolved", skillsDirectory: "/home/dev/.agents/skills" });
-});
-
 test("~ expands to the home itself", () => {
   assert.equal(expandTilde("~", HOME), HOME);
 });

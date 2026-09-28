@@ -17,6 +17,10 @@ export type ResolvedScope =
   | { outcome: "resolved"; skillsDirectory: string }
   | { outcome: "needs-prompt" };
 
+export function skillsDirectoryFor(root: string): string {
+  return join(root, ".agents", "skills");
+}
+
 export function expandTilde(input: string, home: string): string {
   if (input === "~") return home;
   if (input.startsWith("~/")) return join(home, input.slice(2));
@@ -29,14 +33,14 @@ export async function resolveScope(deps: ScopeDeps, options: ScopeOptions): Prom
     throw new ScopeError("--global and --project cannot be used together");
   }
   if (global) {
-    return { outcome: "resolved", skillsDirectory: join(deps.home, ".agents", "skills") };
+    return { outcome: "resolved", skillsDirectory: skillsDirectoryFor(deps.home) };
   }
   if (project) {
     const root = resolve(deps.cwd, expandTilde(project, deps.home));
     if (!(await deps.isDirectory(root))) {
       throw new ScopeError(`Project path does not exist or is not a directory: ${root}`);
     }
-    return { outcome: "resolved", skillsDirectory: join(root, ".agents", "skills") };
+    return { outcome: "resolved", skillsDirectory: skillsDirectoryFor(root) };
   }
   return { outcome: "needs-prompt" };
 }

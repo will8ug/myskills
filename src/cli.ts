@@ -2,10 +2,10 @@
 import * as p from "@clack/prompts";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { join } from "node:path";
-import { list, type ListReport } from "./list.ts";
+import { list } from "./list.ts";
 import { ArgvError, parseArgv } from "./parse-argv.ts";
-import { resolveScope, ScopeError, type ScopeDeps } from "./scope.ts";
+import { reportLines } from "./report.ts";
+import { resolveScope, ScopeError, skillsDirectoryFor, type ScopeDeps } from "./scope.ts";
 
 const isDirectory = (path: string): Promise<boolean> =>
   stat(path).then(
@@ -18,29 +18,24 @@ async function promptSkillsDirectory(deps: ScopeDeps): Promise<string | null> {
     message: "Which skills directory?",
     initialValue: "project",
     options: [
-      { value: "project", label: "Project", hint: `current folder: ${join(deps.cwd, ".agents", "skills")}` },
-      { value: "global", label: "Global", hint: join(deps.home, ".agents", "skills") },
+      { value: "project", label: "Project", hint: `current folder: ${skillsDirectoryFor(deps.cwd)}` },
+      { value: "global", label: "Global", hint: skillsDirectoryFor(deps.home) },
+      { value: "typed", label: "Other project", hint: "type a project path" },
     ],
   });
   if (p.isCancel(choice)) {
     return null;
   }
+  if (choice === "typed") {
+    const typed = await p.text({ message: "Project path", placeholder: "~/some/project" });
+    if (p.isCancel(typed) || typed.trim() === "") {
+      return null;
+    }
+    const resolution = await resolveScope(deps, { project: typed });
+    return resolution.outcome === "resolved" ? resolution.skillsDirectory : null;
+  }
   const resolution = await resolveScope(deps, choice === "global" ? { global: true } : { project: deps.cwd });
   return resolution.outcome === "resolved" ? resolution.skillsDirectory : null;
-}
-
-function renderReport(report: ListReport): void {
-  console.log(report.skillsDirectory);
-  if (report.entries.length === 0) {
-    console.log("  no skills installed");
-    return;
-  }
-  const nameWidth = Math.max(...report.entries.map((entry) => entry.name.length));
-  for (const entry of report.entries) {
-    const kind = entry.kind === "broken-link" ? "broken link" : entry.kind;
-    const target = entry.target !== null ? ` -> ${entry.target}` : "";
-    console.log(`  ${entry.name.padEnd(nameWidth)}  ${kind}${target}`);
-  }
 }
 
 function printUsage(): void {
@@ -53,7 +48,7 @@ Subcommands:
   list    show what is installed in a skills directory
 
 Scope:
-  (none)               prompted; Project (the current folder) is preselected
+  (none)               prompted; Project (current folder) preselected, or type a path
   --global             the user-level skills directory (~/.agents/skills)
   --project <path>     a project's skills directory (<path>/.agents/skills)`);
 }
@@ -83,7 +78,9 @@ async function main(): Promise<void> {
     resolution = { outcome: "resolved", skillsDirectory };
   }
 
-  renderReport(await list({ skillsDirectory: resolution.skillsDirectory }));
+  for (const line of reportLines(await list({ skillsDirectory: resolution.skillsDirectory }))) {
+    console.log(line);
+  }
 }
 
 main().catch((error: unknown) => {
