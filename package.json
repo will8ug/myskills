@@ -2,7 +2,7 @@
   "name": "myskills",
   "version": "0.1.0",
   "description": "Install a chosen subset of skills from a local skill source into a project's or the global skills directory.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "engines": {
     "node": ">=24"
