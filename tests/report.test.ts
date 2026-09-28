@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addReportLines, reportLines } from "../src/report.ts";
+import { addReportLines, describeTargetEntryConflict, reportLines } from "../src/report.ts";
 
 test("columns pad names to the widest entry and show kind and link target", () => {
   const lines = reportLines({
@@ -63,4 +63,20 @@ test("the add report pads names and shows each skill's outcome and link target",
     "  tdd       installed -> /sources/skills/testing/tdd",
     "  grill-me  already installed -> /sources/skills/writing/grill-me",
   ]);
+});
+
+test("a differing link is described with where it points", () => {
+  assert.equal(
+    describeTargetEntryConflict({ kind: "conflict", entry: "link", target: "/other/tdd" }),
+    "a different link -> /other/tdd",
+  );
+});
+
+test("an unreadable link, a directory, and a file are described plainly", () => {
+  assert.equal(
+    describeTargetEntryConflict({ kind: "conflict", entry: "broken-link", target: null }),
+    "a link whose target cannot be read",
+  );
+  assert.equal(describeTargetEntryConflict({ kind: "conflict", entry: "directory" }), "a real directory");
+  assert.equal(describeTargetEntryConflict({ kind: "conflict", entry: "file" }), "a file");
 });

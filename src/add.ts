@@ -1,7 +1,8 @@
 import { lstat, mkdir, readlink, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { classifyTargetEntry, type TargetEntryFacts } from "./entry-classification.ts";
+import { classifyTargetEntry, type TargetEntryFacts, type TargetEntryState } from "./entry-classification.ts";
 import { decideSkills, DiscoveryError, findSkillMdPaths, type DiscoveredSkill } from "./discovery.ts";
+import { describeTargetEntryConflict } from "./report.ts";
 
 export class AddError extends Error {}
 
@@ -38,14 +39,40 @@ export type AddReport = {
 
 /**
  * Validates the whole run up front: resolves the requested names against the discovered skills and
- * checks every target entry state, collecting all conflicts. Execution only runs when no conflict
- * was found, so a failing run changes nothing. Ticket 04 replaces the abort with confirmations,
- * which is why plan building stays separate from execution.
+ * checks every target entry state, collecting all conflicts. Plan building performs no writes —
+ * execution is a separate step that only runs on a complete plan, so a failing run changes nothing.
  */
 export async function planAdd(options: AddOptions): Promise<AddPlan> {
   const { source, skillNames, skillsDirectory } = options;
 
   const discovered = await discoverSkills(source);
+
+  const byName = new Map(discovered.map((skill) => [skill.name, skill]));
+  const targetStates = new Map<string, TargetEntryState>();
+  for (const name of new Set(skillNames)) {
+    const skill = byName.get(name);
+    if (skill === undefined) continue;
+    const expectedTarget = join(source, skill.relativePath);
+    const facts = await readTargetEntryFacts(join(skillsDirectory, name), skillsDirectory);
+    targetStates.set(name, classifyTargetEntry(expectedTarget, facts));
+  }
+
+  return decideAddPlan({ source, skillsDirectory, discovered, skillNames, targetStates });
+}
+
+/**
+ * The pure decision behind planAdd: resolves the requested names against the discovered skills and
+ * checks every target entry state, collecting all conflicts into one error. `targetStates` must
+ * cover every requested name that appears in `discovered`.
+ */
+export function decideAddPlan(input: {
+  source: string;
+  skillsDirectory: string;
+  discovered: readonly DiscoveredSkill[];
+  skillNames: readonly string[];
+  targetStates: ReadonlyMap<string, TargetEntryState>;
+}): AddPlan {
+  const { source, skillsDirectory, discovered, skillNames, targetStates } = input;
 
   if (skillNames.length === 0) {
     throw new AddError(`No skill names given. Available skills: ${availableSkills(discovered)}`);
@@ -62,15 +89,17 @@ export async function planAdd(options: AddOptions): Promise<AddPlan> {
   const installs: PlannedInstall[] = [];
   for (const name of new Set(skillNames)) {
     const skill = byName.get(name);
-    if (skill === undefined) continue;
-    const sourcePath = join(source, skill.relativePath);
-    const facts = await readTargetEntryFacts(join(skillsDirectory, name), skillsDirectory);
-    const state = classifyTargetEntry(sourcePath, facts);
+    const state = targetStates.get(name);
+    if (skill === undefined || state === undefined) continue;
     if (state.kind === "conflict") {
-      conflicts.push(`  ${name}: ${state.description}`);
+      conflicts.push(`  ${name}: ${describeTargetEntryConflict(state)}`);
       continue;
     }
-    installs.push({ name, sourcePath, outcome: state.kind === "same-link" ? "already-installed" : "install" });
+    installs.push({
+      name,
+      sourcePath: join(source, skill.relativePath),
+      outcome: state.kind === "same-link" ? "already-installed" : "install",
+    });
   }
   if (conflicts.length > 0) {
     throw new AddError(`Refusing to install; conflicting entries in ${skillsDirectory}:\n${conflicts.join("\n")}`);
@@ -101,7 +130,7 @@ async function discoverSkills(source: string): Promise<DiscoveredSkill[]> {
   try {
     manifests = await findSkillMdPaths(source);
   } catch (error) {
-    if (error instanceof Error && "code" in error && (error.code === "ENOENT" || error.code === "ENOTDIR")) {
+    if (isErrnoException(error, "ENOENT") || isErrnoException(error, "ENOTDIR")) {
       throw new AddError(`Skill source does not exist or is not a directory: ${source}`);
     }
     throw error;
@@ -128,7 +157,7 @@ async function readTargetEntryFacts(entryPath: string, skillsDirectory: string):
   try {
     entry = await lstat(entryPath);
   } catch (error) {
-    if (error instanceof Error && "code" in error && error.code === "ENOENT") {
+    if (isErrnoException(error, "ENOENT")) {
       return { exists: false, isSymbolicLink: false, isDirectory: false, resolvedLinkTarget: null };
     }
     throw error;
@@ -147,4 +176,8 @@ async function readTargetEntryFacts(entryPath: string, skillsDirectory: string):
 
 function availableSkills(discovered: readonly DiscoveredSkill[]): string {
   return discovered.map((skill) => skill.name).join(", ");
+}
+
+function isErrnoException(error: unknown, code: string): error is NodeJS.ErrnoException {
+  return error instanceof Error && (error as NodeJS.ErrnoException).code === code;
 }

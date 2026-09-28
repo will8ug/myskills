@@ -50,11 +50,11 @@ async function promptSkillSource(deps: ScopeDeps): Promise<string | null> {
 }
 
 async function resolveSkillsDirectory(deps: ScopeDeps, parsed: ParsedArgv): Promise<string | null> {
-  let resolution = await resolveScope(deps, { global: parsed.global, project: parsed.project });
+  const resolution = await resolveScope(deps, { global: parsed.global, project: parsed.project });
   if (resolution.outcome === "needs-prompt") {
     const skillsDirectory = await promptSkillsDirectory(deps);
     if (skillsDirectory === null) {
-      return null;
+      p.cancel("No scope chosen");
     }
     return skillsDirectory;
   }
@@ -66,10 +66,7 @@ async function runList(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
     throw new ArgvError(`list takes no positional arguments, got: ${parsed.positionals.join(" ")}`);
   }
   const skillsDirectory = await resolveSkillsDirectory(deps, parsed);
-  if (skillsDirectory === null) {
-    p.cancel("No scope chosen");
-    return;
-  }
+  if (skillsDirectory === null) return;
   for (const line of reportLines(await list({ skillsDirectory }))) {
     console.log(line);
   }
@@ -86,10 +83,7 @@ async function runAdd(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
   }
 
   const skillsDirectory = await resolveSkillsDirectory(deps, parsed);
-  if (skillsDirectory === null) {
-    p.cancel("No scope chosen");
-    return;
-  }
+  if (skillsDirectory === null) return;
 
   const report = await add({ source, skillNames: split.skillNames, skillsDirectory });
   for (const line of addReportLines(report)) {

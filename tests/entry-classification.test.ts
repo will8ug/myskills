@@ -66,30 +66,30 @@ test("a link already pointing at the skill's source folder is a same-link no-op"
   );
 });
 
-test("a link pointing elsewhere is a conflict naming where it points", () => {
+test("a link pointing elsewhere is a link conflict carrying where it points", () => {
   assert.deepEqual(
     classifyTargetEntry("/source/tdd", targetFacts({ exists: true, isSymbolicLink: true, resolvedLinkTarget: "/other/tdd" })),
-    { kind: "conflict", description: "a different link -> /other/tdd" },
+    { kind: "conflict", entry: "link", target: "/other/tdd" },
   );
 });
 
-test("a link whose target cannot be read is a conflict", () => {
+test("a link whose target cannot be read is a broken-link conflict", () => {
   assert.deepEqual(
     classifyTargetEntry("/source/tdd", targetFacts({ exists: true, isSymbolicLink: true, resolvedLinkTarget: null })),
-    { kind: "conflict", description: "a link whose target cannot be read" },
+    { kind: "conflict", entry: "broken-link", target: null },
   );
 });
 
-test("a real directory at the target is a conflict", () => {
+test("a real directory at the target is a directory conflict", () => {
   assert.deepEqual(
     classifyTargetEntry("/source/tdd", targetFacts({ exists: true, isDirectory: true })),
-    { kind: "conflict", description: "a real directory" },
+    { kind: "conflict", entry: "directory" },
   );
 });
 
-test("a regular file at the target is a conflict", () => {
+test("a regular file at the target is a file conflict", () => {
   assert.deepEqual(
     classifyTargetEntry("/source/tdd", targetFacts({ exists: true })),
-    { kind: "conflict", description: "a file" },
+    { kind: "conflict", entry: "file" },
   );
 });

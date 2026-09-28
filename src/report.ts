@@ -1,4 +1,5 @@
 import type { AddReport } from "./add.ts";
+import type { TargetEntryConflict } from "./entry-classification.ts";
 import type { ListReport } from "./list.ts";
 
 /** Pure rendering of a list report as output lines; printing and exit codes stay in the shell. */
@@ -26,4 +27,18 @@ export function addReportLines(report: AddReport): string[] {
     lines.push(`  ${entry.name.padEnd(nameWidth)}  ${outcome} -> ${entry.target}`);
   }
   return lines;
+}
+
+/** Pure rendering of a conflicting target entry as user-facing wording; classification stays structural. */
+export function describeTargetEntryConflict(conflict: TargetEntryConflict): string {
+  switch (conflict.entry) {
+    case "link":
+      return `a different link -> ${conflict.target}`;
+    case "broken-link":
+      return "a link whose target cannot be read";
+    case "directory":
+      return "a real directory";
+    case "file":
+      return "a file";
+  }
 }

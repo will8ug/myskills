@@ -40,24 +40,27 @@ export type TargetEntryFacts = {
   resolvedLinkTarget: string | null;
 };
 
+export type TargetEntryConflict =
+  | { kind: "conflict"; entry: "link"; target: string }
+  | { kind: "conflict"; entry: "broken-link"; target: string | null }
+  | { kind: "conflict"; entry: "directory" }
+  | { kind: "conflict"; entry: "file" };
+
 export type TargetEntryState =
   | { kind: "absent" }
   | { kind: "same-link" }
-  | { kind: "conflict"; description: string };
+  | TargetEntryConflict;
 
 /** Decides how an install interacts with whatever already sits at the target path. */
 export function classifyTargetEntry(expectedTarget: string, facts: TargetEntryFacts): TargetEntryState {
   if (!facts.exists) return { kind: "absent" };
   if (facts.isSymbolicLink) {
     if (facts.resolvedLinkTarget === expectedTarget) return { kind: "same-link" };
-    return {
-      kind: "conflict",
-      description: facts.resolvedLinkTarget === null
-        ? "a link whose target cannot be read"
-        : `a different link -> ${facts.resolvedLinkTarget}`,
-    };
+    return facts.resolvedLinkTarget === null
+      ? { kind: "conflict", entry: "broken-link", target: null }
+      : { kind: "conflict", entry: "link", target: facts.resolvedLinkTarget };
   }
   return facts.isDirectory
-    ? { kind: "conflict", description: "a real directory" }
-    : { kind: "conflict", description: "a file" };
+    ? { kind: "conflict", entry: "directory" }
+    : { kind: "conflict", entry: "file" };
 }
