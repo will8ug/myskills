@@ -4,11 +4,13 @@ import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
 import { addConfirmations, AddError, discoverSkills, executeAddPlan, findInstalledSkills, planAdd, resolveAddPlan, type InstallMethod } from "./add.ts";
 import { skillPickerItems } from "./add-picker-items.ts";
+import { deleteConfirmations, DeleteError, executeDeletePlan, planDelete, resolveDeletePlan } from "./delete.ts";
+import { deletePickerItems } from "./delete-picker-items.ts";
 import { list } from "./list.ts";
 import { parseArgv, ArgvError, type ParsedArgv } from "./parse-argv.ts";
 import { splitAddPositionals } from "./positionals.ts";
 import { pickMany } from "./picker.ts";
-import { addConfirmationMessage, addReportLines, reportLines } from "./report.ts";
+import { addConfirmationMessage, addReportLines, deleteConfirmationMessage, deleteReportLines, reportLines } from "./report.ts";
 import { resolveScope, ScopeError, skillsDirectoryFor, type ScopeDeps } from "./scope.ts";
 import { resolveSource } from "./source.ts";
 
@@ -49,6 +51,24 @@ async function promptSkillSource(deps: ScopeDeps): Promise<string | null> {
     return null;
   }
   return resolveSource(deps, typed);
+}
+
+async function confirmEach(
+  items: readonly { name: string }[],
+  messageOf: (name: string) => string,
+  initialValue: boolean,
+): Promise<Set<string> | null> {
+  const confirmed = new Set<string>();
+  for (const item of items) {
+    const answer = await p.confirm({ message: messageOf(item.name), initialValue });
+    if (p.isCancel(answer)) {
+      return null;
+    }
+    if (answer) {
+      confirmed.add(item.name);
+    }
+  }
+  return confirmed;
 }
 
 async function resolveSkillsDirectory(deps: ScopeDeps, parsed: ParsedArgv): Promise<string | null> {
@@ -104,22 +124,70 @@ async function runAdd(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
 
   const plan = await planAdd({ source, skillNames, skillsDirectory, method, force: parsed.force });
 
-  const confirmed = new Set<string>();
-  for (const confirmation of addConfirmations(plan)) {
-    const answer = await p.confirm({ message: addConfirmationMessage(confirmation), initialValue: true });
-    if (p.isCancel(answer)) {
-      p.cancel("No changes made");
-      return;
-    }
-    if (answer) {
-      confirmed.add(confirmation.name);
-    }
+  const confirmations = addConfirmations(plan);
+  const confirmed = await confirmEach(
+    confirmations,
+    (name) => addConfirmationMessage(confirmations.find((confirmation) => confirmation.name === name)!),
+    true,
+  );
+  if (confirmed === null) {
+    p.cancel("No changes made");
+    return;
   }
 
   const report = await executeAddPlan(resolveAddPlan(plan, confirmed));
   for (const line of addReportLines(report)) {
     console.log(line);
   }
+}
+
+async function runDelete(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
+  if (parsed.copy) {
+    throw new ArgvError("delete does not accept --copy");
+  }
+  const skillsDirectory = await resolveSkillsDirectory(deps, parsed);
+  if (skillsDirectory === null) return;
+
+  const skillNames = parsed.positionals.length > 0
+    ? parsed.positionals
+    : await pickDeleteNames(skillsDirectory);
+  if (skillNames === null) return;
+
+  const plan = await planDelete({ skillNames, skillsDirectory, force: parsed.force });
+
+  // Enter must mean NO: a deleted hand-made directory is unrecoverable.
+  const confirmations = deleteConfirmations(plan);
+  const confirmed = await confirmEach(
+    confirmations,
+    (name) => deleteConfirmationMessage(confirmations.find((confirmation) => confirmation.name === name)!),
+    false,
+  );
+  if (confirmed === null) {
+    p.cancel("No changes made");
+    return;
+  }
+
+  const report = await executeDeletePlan(resolveDeletePlan(plan, confirmed));
+  for (const line of deleteReportLines(report)) {
+    console.log(line);
+  }
+}
+
+async function pickDeleteNames(skillsDirectory: string): Promise<string[] | null> {
+  const { entries } = await list({ skillsDirectory });
+  if (entries.length === 0) {
+    p.cancel(`No skills installed in ${skillsDirectory}`);
+    return null;
+  }
+  const picked = await pickMany({
+    message: "Which skills to delete? (a selects all)",
+    items: deletePickerItems(entries),
+  });
+  if (picked.outcome === "cancelled") {
+    p.cancel("No skills chosen");
+    return null;
+  }
+  return picked.values;
 }
 
 async function promptInstallMethod(): Promise<InstallMethod | null> {
@@ -158,13 +226,17 @@ function printUsage(): void {
 Usage:
   myskills list [--global | --project <path>]
   myskills add [source] [skill...] [--global | --project <path>] [--copy] [--force]
+  myskills delete [skill...] [--global | --project <path>] [--force]
 
 Subcommands:
   list    show what is installed in a skills directory
   add     install skills by name into a skills directory
+  delete  delete installed skills from a skills directory
 
 In add, the first positional is the skill source when it contains a path
 separator or starts with ~ or .; bare words are always skill names.
+In delete, every positional is a skill name; links go without
+confirmation, real directories and files ask first.
 
 Scope:
   (none)               prompted; Project (current folder) preselected, or type a path
@@ -173,8 +245,9 @@ Scope:
 
 Install method:
   (none)               Link (symlink into the skill source); prompted in the picker flow
-  --copy               Copy: an independent duplicate of each skill folder
-  --force              replace conflicting entries (a different link or a real directory) without asking`);
+  --copy               Copy: an independent duplicate of each skill folder (add only)
+  --force              skip confirmations without asking (add and delete): replace a
+                       different link or a real directory; delete real directories and files`);
 }
 
 async function main(): Promise<void> {
@@ -189,16 +262,25 @@ async function main(): Promise<void> {
     await runAdd(deps, parsed);
     return;
   }
+  if (parsed.subcommand === "delete") {
+    await runDelete(deps, parsed);
+    return;
+  }
   if (parsed.subcommand === "list") {
     await runList(deps, parsed);
     return;
   }
-  throw new ArgvError(`Unknown subcommand: ${parsed.subcommand} (available: add, list)`);
+  throw new ArgvError(`Unknown subcommand: ${parsed.subcommand} (available: add, delete, list)`);
 }
 
 main().catch((error: unknown) => {
   if (error instanceof AddError && error.partialReport !== null) {
     for (const line of addReportLines(error.partialReport)) {
+      console.log(line);
+    }
+  }
+  if (error instanceof DeleteError && error.partialReport !== null) {
+    for (const line of deleteReportLines(error.partialReport)) {
       console.log(line);
     }
   }

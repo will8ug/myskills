@@ -1,6 +1,13 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addConfirmationMessage, addReportLines, describeTargetEntryConflict, reportLines } from "../src/report.ts";
+import {
+  addConfirmationMessage,
+  addReportLines,
+  deleteConfirmationMessage,
+  deleteReportLines,
+  describeTargetEntryConflict,
+  reportLines,
+} from "../src/report.ts";
 
 test("columns pad names to the widest entry and show kind and link target", () => {
   const lines = reportLines({
@@ -122,6 +129,47 @@ test("a differing link is described with where it points", () => {
     describeTargetEntryConflict({ kind: "conflict", entry: "link", target: "/other/tdd" }),
     "a different link -> /other/tdd",
   );
+});
+
+test("the delete report pads names and shows each removed entry's kind", () => {
+  const lines = deleteReportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    entries: [
+      { name: "tdd", kind: "link", outcome: "deleted" },
+      { name: "grill-me", kind: "broken-link", outcome: "deleted" },
+      { name: "handmade", kind: "directory", outcome: "deleted" },
+      { name: "NOTES.md", kind: "file", outcome: "deleted" },
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  tdd       deleted (link)",
+    "  grill-me  deleted (broken link)",
+    "  handmade  deleted (directory)",
+    "  NOTES.md  deleted (file)",
+  ]);
+});
+
+test("a skipped delete entry is listed bare, with no parenthetical", () => {
+  const lines = deleteReportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    entries: [
+      { name: "code-review", kind: "directory", outcome: "deleted" },
+      { name: "frontend-design", kind: "file", outcome: "skipped" },
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  code-review      deleted (directory)",
+    "  frontend-design  skipped",
+  ]);
+});
+
+test("a delete confirmation names the skill and whether it is a directory or a file", () => {
+  assert.equal(deleteConfirmationMessage({ name: "tdd", kind: "directory" }), "Delete tdd (a real directory)?");
+  assert.equal(deleteConfirmationMessage({ name: "NOTES.md", kind: "file" }), "Delete NOTES.md (a file)?");
 });
 
 test("an unreadable link, a directory, and a file are described plainly", () => {
