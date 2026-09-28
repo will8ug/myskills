@@ -2,13 +2,13 @@
 import * as p from "@clack/prompts";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { add, discoverSkills, findInstalledSkills } from "./add.ts";
+import { addConfirmations, AddError, discoverSkills, executeAddPlan, findInstalledSkills, planAdd, resolveAddPlan, type InstallMethod } from "./add.ts";
 import { skillPickerItems } from "./add-picker-items.ts";
 import { list } from "./list.ts";
 import { parseArgv, ArgvError, type ParsedArgv } from "./parse-argv.ts";
 import { splitAddPositionals } from "./positionals.ts";
 import { pickMany } from "./picker.ts";
-import { addReportLines, reportLines } from "./report.ts";
+import { addConfirmationMessage, addReportLines, reportLines } from "./report.ts";
 import { resolveScope, ScopeError, skillsDirectoryFor, type ScopeDeps } from "./scope.ts";
 import { resolveSource } from "./source.ts";
 
@@ -67,6 +67,9 @@ async function runList(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
   if (parsed.positionals.length > 0) {
     throw new ArgvError(`list takes no positional arguments, got: ${parsed.positionals.join(" ")}`);
   }
+  if (parsed.copy || parsed.force) {
+    throw new ArgvError("list does not accept --copy or --force");
+  }
   const skillsDirectory = await resolveSkillsDirectory(deps, parsed);
   if (skillsDirectory === null) return;
   for (const line of reportLines(await list({ skillsDirectory }))) {
@@ -92,10 +95,47 @@ async function runAdd(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
     : await pickSkillNames(source, skillsDirectory);
   if (skillNames === null) return;
 
-  const report = await add({ source, skillNames, skillsDirectory });
+  const method: InstallMethod | null = parsed.copy
+    ? "copy"
+    : split.skillNames.length > 0
+      ? "link"
+      : await promptInstallMethod();
+  if (method === null) return;
+
+  const plan = await planAdd({ source, skillNames, skillsDirectory, method, force: parsed.force });
+
+  const confirmed = new Set<string>();
+  for (const confirmation of addConfirmations(plan)) {
+    const answer = await p.confirm({ message: addConfirmationMessage(confirmation), initialValue: true });
+    if (p.isCancel(answer)) {
+      p.cancel("No changes made");
+      return;
+    }
+    if (answer) {
+      confirmed.add(confirmation.name);
+    }
+  }
+
+  const report = await executeAddPlan(resolveAddPlan(plan, confirmed));
   for (const line of addReportLines(report)) {
     console.log(line);
   }
+}
+
+async function promptInstallMethod(): Promise<InstallMethod | null> {
+  const method = await p.select<"link" | "copy">({
+    message: "Install method?",
+    initialValue: "link",
+    options: [
+      { value: "link", label: "Link", hint: "symlink into the skill source; updates with git pull" },
+      { value: "copy", label: "Copy", hint: "independent duplicate of each skill folder" },
+    ],
+  });
+  if (p.isCancel(method)) {
+    p.cancel("No method chosen");
+    return null;
+  }
+  return method;
 }
 
 async function pickSkillNames(source: string, skillsDirectory: string): Promise<string[] | null> {
@@ -117,11 +157,11 @@ function printUsage(): void {
 
 Usage:
   myskills list [--global | --project <path>]
-  myskills add [source] [skill...] [--global | --project <path>]
+  myskills add [source] [skill...] [--global | --project <path>] [--copy] [--force]
 
 Subcommands:
   list    show what is installed in a skills directory
-  add     install skills by name as links into a skills directory
+  add     install skills by name into a skills directory
 
 In add, the first positional is the skill source when it contains a path
 separator or starts with ~ or .; bare words are always skill names.
@@ -129,7 +169,12 @@ separator or starts with ~ or .; bare words are always skill names.
 Scope:
   (none)               prompted; Project (current folder) preselected, or type a path
   --global             the user-level skills directory (~/.agents/skills)
-  --project <path>     a project's skills directory (<path>/.agents/skills)`);
+  --project <path>     a project's skills directory (<path>/.agents/skills)
+
+Install method:
+  (none)               Link (symlink into the skill source); prompted in the picker flow
+  --copy               Copy: an independent duplicate of each skill folder
+  --force              replace conflicting entries (a different link or a real directory) without asking`);
 }
 
 async function main(): Promise<void> {
@@ -152,6 +197,11 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
+  if (error instanceof AddError && error.partialReport !== null) {
+    for (const line of addReportLines(error.partialReport)) {
+      console.log(line);
+    }
+  }
   console.error(error instanceof Error ? error.message : error);
   process.exitCode = 1;
 });

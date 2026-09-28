@@ -1,4 +1,4 @@
-import type { AddReport } from "./add.ts";
+import type { AddConfirmation, AddReport, AddReportEntry, InstallMethod } from "./add.ts";
 import type { TargetEntryConflict } from "./entry-classification.ts";
 import type { ListReport } from "./list.ts";
 
@@ -24,9 +24,22 @@ export function addReportLines(report: AddReport): string[] {
   const nameWidth = Math.max(...report.entries.map((entry) => entry.name.length));
   for (const entry of report.entries) {
     const outcome = entry.outcome === "already-installed" ? "already installed" : entry.outcome;
-    lines.push(`  ${entry.name.padEnd(nameWidth)}  ${outcome} -> ${entry.target}`);
+    lines.push(`  ${entry.name.padEnd(nameWidth)}  ${outcome}${addOutcomeDetail(report.method, entry)}`);
   }
   return lines;
+}
+
+/** An already-installed entry is always a Link, whatever method this run used. */
+function addOutcomeDetail(method: InstallMethod, entry: AddReportEntry): string {
+  if (entry.outcome === "skipped") return "";
+  if (method === "copy" && (entry.outcome === "installed" || entry.outcome === "replaced")) {
+    return ` (copy of ${entry.sourcePath})`;
+  }
+  return ` -> ${entry.sourcePath}`;
+}
+
+export function addConfirmationMessage(confirmation: AddConfirmation): string {
+  return `Replace ${confirmation.name} (${describeTargetEntryConflict(confirmation.conflict)})?`;
 }
 
 /** Pure rendering of a conflicting target entry as user-facing wording; classification stays structural. */

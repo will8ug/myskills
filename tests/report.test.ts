@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { addReportLines, describeTargetEntryConflict, reportLines } from "../src/report.ts";
+import { addConfirmationMessage, addReportLines, describeTargetEntryConflict, reportLines } from "../src/report.ts";
 
 test("columns pad names to the widest entry and show kind and link target", () => {
   const lines = reportLines({
@@ -49,20 +49,72 @@ test("an empty report says so under the skills directory", () => {
   assert.deepEqual(lines, ["/repos/api/.agents/skills", "  no skills installed"]);
 });
 
-test("the add report pads names and shows each skill's outcome and link target", () => {
+test("the add report pads names and shows each link outcome with its source", () => {
   const lines = addReportLines({
     skillsDirectory: "/repos/api/.agents/skills",
+    method: "link",
     entries: [
-      { name: "tdd", outcome: "installed", target: "/sources/skills/testing/tdd" },
-      { name: "grill-me", outcome: "already-installed", target: "/sources/skills/writing/grill-me" },
+      { name: "tdd", outcome: "installed", sourcePath: "/sources/skills/testing/tdd" },
+      { name: "grill-me", outcome: "replaced", sourcePath: "/sources/skills/writing/grill-me" },
+      { name: "ask-matt", outcome: "already-installed", sourcePath: "/sources/skills/asking/ask-matt" },
+      { name: "code-review", outcome: "skipped", sourcePath: "/sources/skills/reviewing/code-review" },
     ],
   });
 
   assert.deepEqual(lines, [
     "/repos/api/.agents/skills",
-    "  tdd       installed -> /sources/skills/testing/tdd",
-    "  grill-me  already installed -> /sources/skills/writing/grill-me",
+    "  tdd          installed -> /sources/skills/testing/tdd",
+    "  grill-me     replaced -> /sources/skills/writing/grill-me",
+    "  ask-matt     already installed -> /sources/skills/asking/ask-matt",
+    "  code-review  skipped",
   ]);
+});
+
+test("copy installs and replacements show the origin folder instead of an arrow", () => {
+  const lines = addReportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    method: "copy",
+    entries: [
+      { name: "tdd", outcome: "installed", sourcePath: "/sources/skills/testing/tdd" },
+      { name: "grill-me", outcome: "replaced", sourcePath: "/sources/skills/writing/grill-me" },
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  tdd       installed (copy of /sources/skills/testing/tdd)",
+    "  grill-me  replaced (copy of /sources/skills/writing/grill-me)",
+  ]);
+});
+
+test("under the copy method an already-installed entry is still shown as the link it is", () => {
+  const lines = addReportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    method: "copy",
+    entries: [{ name: "tdd", outcome: "already-installed", sourcePath: "/sources/skills/testing/tdd" }],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  tdd  already installed -> /sources/skills/testing/tdd",
+  ]);
+});
+
+test("a confirmation message names the skill and describes the conflicting entry", () => {
+  assert.equal(
+    addConfirmationMessage({
+      name: "tdd",
+      conflict: { kind: "conflict", entry: "directory" },
+    }),
+    "Replace tdd (a real directory)?",
+  );
+  assert.equal(
+    addConfirmationMessage({
+      name: "grill-me",
+      conflict: { kind: "conflict", entry: "link", target: "/other/grill-me" },
+    }),
+    "Replace grill-me (a different link -> /other/grill-me)?",
+  );
 });
 
 test("a differing link is described with where it points", () => {

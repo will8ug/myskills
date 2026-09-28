@@ -4,6 +4,8 @@ export type ParsedArgv = {
   positionals: string[];
   global: boolean;
   project: string | null;
+  copy: boolean;
+  force: boolean;
 };
 
 export class ArgvError extends Error {}
@@ -12,12 +14,18 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   const positionals: string[] = [];
   let global = false;
   let project: string | null = null;
+  let copy = false;
+  let force = false;
 
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (arg === undefined) continue;
     if (arg === "--global") {
       global = true;
+    } else if (arg === "--copy") {
+      copy = true;
+    } else if (arg === "--force") {
+      force = true;
     } else if (arg === "--project") {
       const value = argv[i + 1];
       if (value === undefined || value === "") {
@@ -33,5 +41,5 @@ export function parseArgv(argv: readonly string[]): ParsedArgv {
   }
 
   const subcommand = positionals[0] ?? null;
-  return { subcommand, positionals: positionals.slice(1), global, project };
+  return { subcommand, positionals: positionals.slice(1), global, project, copy, force };
 }

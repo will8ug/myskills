@@ -8,6 +8,8 @@ test("parses the list subcommand", () => {
     positionals: [],
     global: false,
     project: null,
+    copy: false,
+    force: false,
   });
 });
 
@@ -17,6 +19,8 @@ test("no arguments means no subcommand", () => {
     positionals: [],
     global: false,
     project: null,
+    copy: false,
+    force: false,
   });
 });
 
@@ -26,6 +30,8 @@ test("parses --global", () => {
     positionals: [],
     global: true,
     project: null,
+    copy: false,
+    force: false,
   });
 });
 
@@ -35,7 +41,27 @@ test("parses --project with its path", () => {
     positionals: [],
     global: false,
     project: "/repos/api",
+    copy: false,
+    force: false,
   });
+});
+
+test("parses --copy and --force after the subcommand", () => {
+  assert.deepEqual(parseArgv(["add", "--copy", "--force"]), {
+    subcommand: "add",
+    positionals: [],
+    global: false,
+    project: null,
+    copy: true,
+    force: true,
+  });
+});
+
+test("parses --copy and --force before the subcommand", () => {
+  const parsed = parseArgv(["--copy", "--force", "add", "tdd"]);
+  assert.equal(parsed.subcommand, "add");
+  assert.equal(parsed.copy, true);
+  assert.equal(parsed.force, true);
 });
 
 test("flags may appear before the subcommand", () => {
@@ -65,8 +91,8 @@ test("--project with an empty value is an error", () => {
 
 test("unknown flags are errors", () => {
   assert.throws(
-    () => parseArgv(["list", "--copy"]),
-    (error: unknown) => error instanceof ArgvError && error.message === "Unknown flag: --copy",
+    () => parseArgv(["list", "--verbose"]),
+    (error: unknown) => error instanceof ArgvError && error.message === "Unknown flag: --verbose",
   );
 });
 

@@ -1,10 +1,17 @@
-import { lstat, mkdir, readlink, symlink } from "node:fs/promises";
+import { cp, lstat, mkdir, readlink, rm, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
-import { classifyTargetEntry, type TargetEntryFacts, type TargetEntryState } from "./entry-classification.ts";
+import { classifyTargetEntry, type TargetEntryConflict, type TargetEntryFacts, type TargetEntryState } from "./entry-classification.ts";
 import { decideSkills, DiscoveryError, findSkillMdPaths, type DiscoveredSkill } from "./discovery.ts";
-import { describeTargetEntryConflict } from "./report.ts";
 
-export class AddError extends Error {}
+export class AddError extends Error {
+  readonly partialReport: AddReport | null;
+  constructor(message: string, partialReport: AddReport | null = null) {
+    super(message);
+    this.partialReport = partialReport;
+  }
+}
+
+export type InstallMethod = "link" | "copy";
 
 export type AddOptions = {
   /** absolute path to the skill source root */
@@ -12,38 +19,67 @@ export type AddOptions = {
   skillNames: readonly string[];
   /** absolute path to the skills directory */
   skillsDirectory: string;
+  method: InstallMethod;
+  force: boolean;
 };
 
-export type PlannedInstall = {
-  name: string;
-  /** the skill's folder in the skill source, absolute */
-  sourcePath: string;
-  outcome: "install" | "already-installed";
-};
+export type PlannedInstall =
+  | { name: string; sourcePath: string; action: "install" }
+  | { name: string; sourcePath: string; action: "already-installed" }
+  | { name: string; sourcePath: string; action: "replace" }
+  | { name: string; sourcePath: string; action: "confirm-replace"; conflict: TargetEntryConflict };
 
 export type AddPlan = {
   skillsDirectory: string;
+  method: InstallMethod;
   installs: PlannedInstall[];
+};
+
+export type AddConfirmation = {
+  name: string;
+  conflict: TargetEntryConflict;
+};
+
+export type ResolvedInstall = {
+  name: string;
+  sourcePath: string;
+  action: "install" | "replace" | "already-installed" | "skip";
+};
+
+export type ResolvedAddPlan = {
+  skillsDirectory: string;
+  method: InstallMethod;
+  installs: ResolvedInstall[];
 };
 
 export type AddReportEntry = {
   name: string;
-  outcome: "installed" | "already-installed";
-  target: string;
+  outcome: "installed" | "replaced" | "already-installed" | "skipped";
+  /** the skill's folder in the source: the link target for a Link, the copied origin for a Copy */
+  sourcePath: string;
 };
 
 export type AddReport = {
   skillsDirectory: string;
+  method: InstallMethod;
   entries: AddReportEntry[];
+};
+
+const outcomeForAction: Record<ResolvedInstall["action"], AddReportEntry["outcome"]> = {
+  install: "installed",
+  replace: "replaced",
+  "already-installed": "already-installed",
+  skip: "skipped",
 };
 
 /**
  * Validates the whole run up front: resolves the requested names against the discovered skills and
- * checks every target entry state, collecting all conflicts. Plan building performs no writes —
- * execution is a separate step that only runs on a complete plan, so a failing run changes nothing.
+ * checks every target entry state, turning conflicts into pending confirmations or (with force)
+ * planned replacements. Plan building performs no writes — execution is a separate step that only
+ * runs on a complete plan.
  */
 export async function planAdd(options: AddOptions): Promise<AddPlan> {
-  const { source, skillNames, skillsDirectory } = options;
+  const { source, skillNames, skillsDirectory, method, force } = options;
 
   const discovered = await discoverSkills(source);
 
@@ -55,22 +91,24 @@ export async function planAdd(options: AddOptions): Promise<AddPlan> {
     targetStates.set(name, await classifySkillTarget(source, skillsDirectory, skill));
   }
 
-  return decideAddPlan({ source, skillsDirectory, discovered, skillNames, targetStates });
+  return decideAddPlan({ source, skillsDirectory, method, force, discovered, skillNames, targetStates });
 }
 
 /**
  * The pure decision behind planAdd: resolves the requested names against the discovered skills and
- * checks every target entry state, collecting all conflicts into one error. `targetStates` must
- * cover every requested name that appears in `discovered`.
+ * decides each install's action from its target entry state. `targetStates` must cover every
+ * requested name that appears in `discovered`.
  */
 export function decideAddPlan(input: {
   source: string;
   skillsDirectory: string;
+  method: InstallMethod;
+  force: boolean;
   discovered: readonly DiscoveredSkill[];
   skillNames: readonly string[];
   targetStates: ReadonlyMap<string, TargetEntryState>;
 }): AddPlan {
-  const { source, skillsDirectory, discovered, skillNames, targetStates } = input;
+  const { source, skillsDirectory, method, force, discovered, skillNames, targetStates } = input;
 
   if (skillNames.length === 0) {
     throw new AddError(`No skill names given. Available skills: ${availableSkills(discovered)}`);
@@ -83,50 +121,106 @@ export function decideAddPlan(input: {
     );
   }
 
-  const conflicts: string[] = [];
   const installs: PlannedInstall[] = [];
   for (const name of new Set(skillNames)) {
     const skill = byName.get(name);
     const state = targetStates.get(name);
     if (skill === undefined || state === undefined) continue;
-    if (state.kind === "conflict") {
-      conflicts.push(`  ${name}: ${describeTargetEntryConflict(state)}`);
+    const sourcePath = join(source, skill.relativePath);
+    if (state.kind === "same-link") {
+      installs.push({ name, sourcePath, action: "already-installed" });
       continue;
     }
-    installs.push({
-      name,
-      sourcePath: join(source, skill.relativePath),
-      outcome: state.kind === "same-link" ? "already-installed" : "install",
-    });
-  }
-  if (conflicts.length > 0) {
-    throw new AddError(`Refusing to install; conflicting entries in ${skillsDirectory}:\n${conflicts.join("\n")}`);
-  }
-
-  return { skillsDirectory, installs };
-}
-
-/** Only execution writes anything: the skills directory is created on demand, then the links. */
-export async function executeAddPlan(plan: AddPlan): Promise<AddReport> {
-  await mkdir(plan.skillsDirectory, { recursive: true });
-  const entries: AddReportEntry[] = [];
-  for (const install of plan.installs) {
-    if (install.outcome === "install") {
-      await symlink(install.sourcePath, join(plan.skillsDirectory, install.name), "dir");
+    if (state.kind === "absent") {
+      installs.push({ name, sourcePath, action: "install" });
+      continue;
     }
-    entries.push({ name: install.name, outcome: install.outcome === "install" ? "installed" : "already-installed", target: install.sourcePath });
+    installs.push(
+      force
+        ? { name, sourcePath, action: "replace" }
+        : { name, sourcePath, action: "confirm-replace", conflict: state },
+    );
   }
-  return { skillsDirectory: plan.skillsDirectory, entries };
+
+  return { skillsDirectory, method, installs };
 }
 
-export async function add(options: AddOptions): Promise<AddReport> {
-  return executeAddPlan(await planAdd(options));
+/** The replacements still awaiting a decision, in request order. */
+export function addConfirmations(plan: AddPlan): AddConfirmation[] {
+  const confirmations: AddConfirmation[] = [];
+  for (const install of plan.installs) {
+    if (install.action === "confirm-replace") {
+      confirmations.push({ name: install.name, conflict: install.conflict });
+    }
+  }
+  return confirmations;
+}
+
+export function resolveAddPlan(plan: AddPlan, confirmed: ReadonlySet<string>): ResolvedAddPlan {
+  const installs: ResolvedInstall[] = plan.installs.map((install): ResolvedInstall => ({
+    name: install.name,
+    sourcePath: install.sourcePath,
+    action: install.action === "confirm-replace"
+      ? confirmed.has(install.name)
+        ? "replace"
+        : "skip"
+      : install.action,
+  }));
+  return { skillsDirectory: plan.skillsDirectory, method: plan.method, installs };
+}
+
+/** The only write site: nothing before execution touches the filesystem. */
+export async function executeAddPlan(resolved: ResolvedAddPlan): Promise<AddReport> {
+  await mkdir(resolved.skillsDirectory, { recursive: true });
+  const entries: AddReportEntry[] = [];
+  for (const install of resolved.installs) {
+    if (install.action === "install" || install.action === "replace") {
+      try {
+        await createEntry(resolved, install);
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new AddError(
+          reason,
+          entries.length > 0
+            ? { skillsDirectory: resolved.skillsDirectory, method: resolved.method, entries }
+            : null,
+        );
+      }
+    }
+    entries.push({ name: install.name, outcome: outcomeForAction[install.action], sourcePath: install.sourcePath });
+  }
+  return { skillsDirectory: resolved.skillsDirectory, method: resolved.method, entries };
+}
+
+async function createEntry(resolved: ResolvedAddPlan, install: ResolvedInstall): Promise<void> {
+  const entryPath = join(resolved.skillsDirectory, install.name);
+  if (install.action === "replace") {
+    // rm on a symlink removes the link only; the skill source is never touched.
+    await rm(entryPath, { recursive: true, force: true });
+  }
+  if (resolved.method === "copy") {
+    try {
+      await cp(install.sourcePath, entryPath, { recursive: true });
+    } catch (error) {
+      throw new AddError(
+        `Failed to copy ${install.sourcePath} to ${entryPath}: ${error instanceof Error ? error.message : error}.`,
+      );
+    }
+    return;
+  }
+  try {
+    await symlink(install.sourcePath, entryPath, "dir");
+  } catch (error) {
+    throw new AddError(
+      `Failed to create link ${entryPath}: ${error instanceof Error ? error.message : error}. Retry with --copy.`,
+    );
+  }
 }
 
 /**
  * Which of the discovered skills already sit in the skills directory as a same-source link.
- * Any differing entry (other link, real directory, file) is deliberately not "installed":
- * those surface as conflicts at plan time.
+ * A Copy at the target is deliberately not "installed": stateless per ADR 0002, it is
+ * indistinguishable from a hand-made directory.
  */
 export async function findInstalledSkills(
   source: string,
