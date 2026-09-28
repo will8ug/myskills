@@ -163,12 +163,11 @@ async function runDelete(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
 
   const plan = await planDelete({ skillNames, skillsDirectory, force: parsed.force });
 
-  // Enter must mean NO: a deleted hand-made directory is unrecoverable.
   const confirmations = deleteConfirmations(plan);
   const confirmed = await confirmEach(
     confirmations,
     (name) => deleteConfirmationMessage(confirmations.find((confirmation) => confirmation.name === name)!),
-    false,
+    true,
   );
   if (confirmed === null) {
     p.cancel("No changes made");

@@ -6,7 +6,7 @@ This is a custom, local-only take on [vercel-labs/skills](https://github.com/ver
 
 - **Link installs (default):** absolute symlinks straight into the skill source clone, so a `git pull` in the source updates every installed target immediately. **Copy installs** (`--copy`) make independent duplicates instead.
 - **Stateless:** no config file, no manifest, no lock file. `list` and `delete` operate on whatever is actually present, including links made by hand.
-- **Conflict-safe:** replacing a differing link or a real directory asks first (replace is the default for `add`, decline is the default for `delete`); `--force` skips the prompts for scripted runs.
+- **Conflict-safe:** `add` asks before replacing a differing link or a real directory, and `delete` asks before removing a directory or file; confirm is the default answer, and `--force` skips the prompts for scripted runs.
 
 ## Install
 
