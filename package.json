@@ -1,0 +1,28 @@
+{
+  "name": "myskills",
+  "version": "0.1.0",
+  "description": "Install a chosen subset of skills from a local skill source into a project's or the global skills directory.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "myskills": "dist/cli.js"
+  },
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "build": "tsc -p tsconfig.build.json && chmod +x dist/cli.js",
+    "test": "node --test --experimental-strip-types \"tests/**/*.test.ts\""
+  },
+  "dependencies": {
+    "@clack/prompts": "^1.8.1"
+  },
+  "devDependencies": {
+    "@types/node": "^24.5.2",
+    "typescript": "~5.9.3"
+  }
+}
