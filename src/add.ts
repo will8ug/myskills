@@ -52,9 +52,7 @@ export async function planAdd(options: AddOptions): Promise<AddPlan> {
   for (const name of new Set(skillNames)) {
     const skill = byName.get(name);
     if (skill === undefined) continue;
-    const expectedTarget = join(source, skill.relativePath);
-    const facts = await readTargetEntryFacts(join(skillsDirectory, name), skillsDirectory);
-    targetStates.set(name, classifyTargetEntry(expectedTarget, facts));
+    targetStates.set(name, await classifySkillTarget(source, skillsDirectory, skill));
   }
 
   return decideAddPlan({ source, skillsDirectory, discovered, skillNames, targetStates });
@@ -137,13 +135,21 @@ export async function findInstalledSkills(
 ): Promise<ReadonlySet<string>> {
   const installed = new Set<string>();
   for (const skill of discovered) {
-    const expectedTarget = join(source, skill.relativePath);
-    const facts = await readTargetEntryFacts(join(skillsDirectory, skill.name), skillsDirectory);
-    if (classifyTargetEntry(expectedTarget, facts).kind === "same-link") {
+    if ((await classifySkillTarget(source, skillsDirectory, skill)).kind === "same-link") {
       installed.add(skill.name);
     }
   }
   return installed;
+}
+
+async function classifySkillTarget(
+  source: string,
+  skillsDirectory: string,
+  skill: DiscoveredSkill,
+): Promise<TargetEntryState> {
+  const expectedTarget = join(source, skill.relativePath);
+  const facts = await readTargetEntryFacts(join(skillsDirectory, skill.name), skillsDirectory);
+  return classifyTargetEntry(expectedTarget, facts);
 }
 
 export async function discoverSkills(source: string): Promise<DiscoveredSkill[]> {

@@ -4,9 +4,9 @@ import { styleText } from "node:util";
 export type PickerItem = {
   value: string;
   label: string;
-  /** shown dim in parentheses next to the label, e.g. a path */
+  /** passed through to the underlying prompt UI, which shows it dim next to the label, e.g. a path */
   hint?: string;
-  /** a status note rendered with the label, e.g. "already installed" */
+  /** rendered by pickMany after the label, e.g. "already installed" */
   annotation?: string;
 };
 
