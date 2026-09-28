@@ -2,10 +2,12 @@
 import * as p from "@clack/prompts";
 import { stat } from "node:fs/promises";
 import { homedir } from "node:os";
-import { add } from "./add.ts";
+import { add, discoverSkills, findInstalledSkills } from "./add.ts";
+import { skillPickerItems } from "./add-picker-items.ts";
 import { list } from "./list.ts";
 import { parseArgv, ArgvError, type ParsedArgv } from "./parse-argv.ts";
 import { splitAddPositionals } from "./positionals.ts";
+import { pickMany } from "./picker.ts";
 import { addReportLines, reportLines } from "./report.ts";
 import { resolveScope, ScopeError, skillsDirectoryFor, type ScopeDeps } from "./scope.ts";
 import { resolveSource } from "./source.ts";
@@ -85,10 +87,29 @@ async function runAdd(deps: ScopeDeps, parsed: ParsedArgv): Promise<void> {
   const skillsDirectory = await resolveSkillsDirectory(deps, parsed);
   if (skillsDirectory === null) return;
 
-  const report = await add({ source, skillNames: split.skillNames, skillsDirectory });
+  const skillNames = split.skillNames.length > 0
+    ? split.skillNames
+    : await pickSkillNames(source, skillsDirectory);
+  if (skillNames === null) return;
+
+  const report = await add({ source, skillNames, skillsDirectory });
   for (const line of addReportLines(report)) {
     console.log(line);
   }
+}
+
+async function pickSkillNames(source: string, skillsDirectory: string): Promise<string[] | null> {
+  const discovered = await discoverSkills(source);
+  const installed = await findInstalledSkills(source, skillsDirectory, discovered);
+  const picked = await pickMany({
+    message: "Which skills? (a selects all)",
+    items: skillPickerItems(discovered, installed),
+  });
+  if (picked.outcome === "cancelled") {
+    p.cancel("No skills chosen");
+    return null;
+  }
+  return picked.values;
 }
 
 function printUsage(): void {

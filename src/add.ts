@@ -125,7 +125,28 @@ export async function add(options: AddOptions): Promise<AddReport> {
   return executeAddPlan(await planAdd(options));
 }
 
-async function discoverSkills(source: string): Promise<DiscoveredSkill[]> {
+/**
+ * Which of the discovered skills already sit in the skills directory as a same-source link.
+ * Any differing entry (other link, real directory, file) is deliberately not "installed":
+ * those surface as conflicts at plan time.
+ */
+export async function findInstalledSkills(
+  source: string,
+  skillsDirectory: string,
+  discovered: readonly DiscoveredSkill[],
+): Promise<ReadonlySet<string>> {
+  const installed = new Set<string>();
+  for (const skill of discovered) {
+    const expectedTarget = join(source, skill.relativePath);
+    const facts = await readTargetEntryFacts(join(skillsDirectory, skill.name), skillsDirectory);
+    if (classifyTargetEntry(expectedTarget, facts).kind === "same-link") {
+      installed.add(skill.name);
+    }
+  }
+  return installed;
+}
+
+export async function discoverSkills(source: string): Promise<DiscoveredSkill[]> {
   let manifests: string[];
   try {
     manifests = await findSkillMdPaths(source);
