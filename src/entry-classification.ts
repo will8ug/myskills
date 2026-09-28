@@ -29,3 +29,35 @@ export function classifyEntry(name: string, facts: EntryFacts): ClassifiedEntry 
   }
   return { name, kind: "file", target: null };
 }
+
+export type TargetEntryFacts = {
+  /** whether any entry exists at the target path (lstat succeeds) */
+  exists: boolean;
+  isSymbolicLink: boolean;
+  /** lstat says the entry is a real directory; false for symlinks */
+  isDirectory: boolean;
+  /** readlink resolved to an absolute path; null when absent, not a symlink, or unreadable */
+  resolvedLinkTarget: string | null;
+};
+
+export type TargetEntryState =
+  | { kind: "absent" }
+  | { kind: "same-link" }
+  | { kind: "conflict"; description: string };
+
+/** Decides how an install interacts with whatever already sits at the target path. */
+export function classifyTargetEntry(expectedTarget: string, facts: TargetEntryFacts): TargetEntryState {
+  if (!facts.exists) return { kind: "absent" };
+  if (facts.isSymbolicLink) {
+    if (facts.resolvedLinkTarget === expectedTarget) return { kind: "same-link" };
+    return {
+      kind: "conflict",
+      description: facts.resolvedLinkTarget === null
+        ? "a link whose target cannot be read"
+        : `a different link -> ${facts.resolvedLinkTarget}`,
+    };
+  }
+  return facts.isDirectory
+    ? { kind: "conflict", description: "a real directory" }
+    : { kind: "conflict", description: "a file" };
+}

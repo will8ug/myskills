@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { reportLines } from "../src/report.ts";
+import { addReportLines, reportLines } from "../src/report.ts";
 
 test("columns pad names to the widest entry and show kind and link target", () => {
   const lines = reportLines({
@@ -47,4 +47,20 @@ test("an empty report says so under the skills directory", () => {
   const lines = reportLines({ skillsDirectory: "/repos/api/.agents/skills", entries: [] });
 
   assert.deepEqual(lines, ["/repos/api/.agents/skills", "  no skills installed"]);
+});
+
+test("the add report pads names and shows each skill's outcome and link target", () => {
+  const lines = addReportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    entries: [
+      { name: "tdd", outcome: "installed", target: "/sources/skills/testing/tdd" },
+      { name: "grill-me", outcome: "already-installed", target: "/sources/skills/writing/grill-me" },
+    ],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  tdd       installed -> /sources/skills/testing/tdd",
+    "  grill-me  already installed -> /sources/skills/writing/grill-me",
+  ]);
 });
