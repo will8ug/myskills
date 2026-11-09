@@ -36,3 +36,7 @@ _Avoid_: uninstall, remove
 
 **Broken link**:
 A Link whose target no longer exists, for example because the skill source moved.
+
+**Hollow link**:
+A Link whose target folder still exists but no longer contains a `SKILL.md`, so it no longer points at a Skill.
+_Avoid_: empty link, stale link
