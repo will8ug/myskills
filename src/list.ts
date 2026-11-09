@@ -1,6 +1,7 @@
 import { readdir, readlink, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { classifyEntry, type ClassifiedEntry } from "./entry-classification.ts";
+import { SKILL_MANIFEST } from "./discovery.ts";
 
 export type ListOptions = {
   skillsDirectory: string;
@@ -42,17 +43,17 @@ async function classifyDirent(
   if (isSymbolicLink) {
     const target = await readlink(entryPath).catch(() => null);
     let targetExists = false;
-    let targetIsDirectory = false;
+    let manifestPresent = false;
     try {
-      const targetStat = await stat(entryPath);
+      await stat(entryPath);
       targetExists = true;
-      targetIsDirectory = targetStat.isDirectory();
+      manifestPresent = await stat(join(entryPath, SKILL_MANIFEST)).then(() => true, () => false);
     } catch {
       // stat on a symlink follows the link; failure means the target is gone
     }
-    return classifyEntry(name, { isSymbolicLink, target, targetExists, isDirectory: targetIsDirectory });
+    return classifyEntry(name, { isSymbolicLink, target, targetExists, manifestPresent, isDirectory });
   }
-  return classifyEntry(name, { isSymbolicLink, target: null, targetExists: false, isDirectory });
+  return classifyEntry(name, { isSymbolicLink, target: null, targetExists: false, manifestPresent: false, isDirectory });
 }
 
 function byName(a: ClassifiedEntry, b: ClassifiedEntry): number {

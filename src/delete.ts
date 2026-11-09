@@ -98,7 +98,7 @@ export function decideDeletePlan(input: {
   for (const name of requested) {
     const entry = byName.get(name);
     if (entry === undefined) continue;
-    if (entry.kind === "link" || entry.kind === "broken-link") {
+    if (entry.kind === "link" || entry.kind === "broken-link" || entry.kind === "hollow-link") {
       removals.push({ name, kind: entry.kind, action: "remove" });
       continue;
     }

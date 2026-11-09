@@ -9,7 +9,7 @@ async function makeTempRoot(): Promise<string> {
   return mkdtemp(join(tmpdir(), "myskills-list-"));
 }
 
-test("list classifies links, broken links, directories, and files", async (t) => {
+test("list classifies links, hollow links, broken links, directories, and files", async (t) => {
   const root = await makeTempRoot();
   t.after(() => rm(root, { recursive: true, force: true }));
 
@@ -17,10 +17,14 @@ test("list classifies links, broken links, directories, and files", async (t) =>
   await mkdir(skills);
   const linkedSkill = join(root, "source", "tdd");
   await mkdir(linkedSkill, { recursive: true });
+  await writeFile(join(linkedSkill, "SKILL.md"), "tdd");
+  const hollowSkill = join(root, "source", "hollow");
+  await mkdir(hollowSkill, { recursive: true });
   const linkedFile = join(root, "source", "NOTES.md");
   await writeFile(linkedFile, "notes");
 
   await symlink(linkedSkill, join(skills, "tdd"), "dir");
+  await symlink(hollowSkill, join(skills, "hollow"), "dir");
   await symlink(join(root, "vanished"), join(skills, "moved"), "dir");
   await symlink(linkedFile, join(skills, "notes-file"));
   await mkdir(join(skills, "handmade"));
@@ -32,8 +36,9 @@ test("list classifies links, broken links, directories, and files", async (t) =>
   assert.deepEqual(report.entries, [
     { name: "README.md", kind: "file", target: null },
     { name: "handmade", kind: "directory", target: null },
+    { name: "hollow", kind: "hollow-link", target: hollowSkill },
     { name: "moved", kind: "broken-link", target: join(root, "vanished") },
-    { name: "notes-file", kind: "link", target: linkedFile },
+    { name: "notes-file", kind: "hollow-link", target: linkedFile },
     { name: "tdd", kind: "link", target: linkedSkill },
   ]);
 });

@@ -6,14 +6,22 @@ const facts = (overrides: Partial<EntryFacts>): EntryFacts => ({
   isSymbolicLink: false,
   target: null,
   targetExists: false,
+  manifestPresent: false,
   isDirectory: false,
   ...overrides,
 });
 
-test("a symlink whose target exists is a link carrying the target path", () => {
+test("a symlink whose target exists and holds SKILL.md is a link carrying the target path", () => {
+  assert.deepEqual(
+    classifyEntry("tdd", facts({ isSymbolicLink: true, target: "/source/skills/tdd", targetExists: true, manifestPresent: true })),
+    { name: "tdd", kind: "link", target: "/source/skills/tdd" },
+  );
+});
+
+test("a symlink whose target exists but holds no SKILL.md is a hollow link carrying the target path", () => {
   assert.deepEqual(
     classifyEntry("tdd", facts({ isSymbolicLink: true, target: "/source/skills/tdd", targetExists: true })),
-    { name: "tdd", kind: "link", target: "/source/skills/tdd" },
+    { name: "tdd", kind: "hollow-link", target: "/source/skills/tdd" },
   );
 });
 

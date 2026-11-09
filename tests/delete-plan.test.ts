@@ -61,6 +61,19 @@ test("links and broken links are planned as removals with zero confirmations", (
   assert.deepEqual(deleteConfirmations(plan), []);
 });
 
+test("hollow links are planned as removals with zero confirmations", () => {
+  const plan = decideDeletePlan(input({
+    skillNames: ["hollow"],
+    entries: [{ name: "hollow", kind: "hollow-link", target: "/source/skills/hollow" }],
+  }));
+
+  assert.deepEqual(plan, {
+    skillsDirectory: "/project/.agents/skills",
+    removals: [{ name: "hollow", kind: "hollow-link", action: "remove" }],
+  });
+  assert.deepEqual(deleteConfirmations(plan), []);
+});
+
 test("real directories and files become confirm-remove", () => {
   const plan = decideDeletePlan(input({ skillNames: ["code-review", "frontend-design"] }));
 

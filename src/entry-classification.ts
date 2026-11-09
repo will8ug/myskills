@@ -1,4 +1,4 @@
-export type EntryKind = "link" | "broken-link" | "directory" | "file";
+export type EntryKind = "link" | "hollow-link" | "broken-link" | "directory" | "file";
 
 export type ClassifiedEntry = {
   name: string;
@@ -12,17 +12,19 @@ export type EntryFacts = {
   target: string | null;
   /** whether stat on the entry succeeds, i.e. the symlink's target exists */
   targetExists: boolean;
+  /** whether the symlink target still contains a SKILL.md */
+  manifestPresent: boolean;
   isDirectory: boolean;
 };
 
 export function classifyEntry(name: string, facts: EntryFacts): ClassifiedEntry {
   if (facts.isSymbolicLink) {
-    if (facts.target === null) {
-      return { name, kind: "broken-link", target: null };
+    if (facts.target === null || !facts.targetExists) {
+      return { name, kind: "broken-link", target: facts.target };
     }
-    return facts.targetExists
+    return facts.manifestPresent
       ? { name, kind: "link", target: facts.target }
-      : { name, kind: "broken-link", target: facts.target };
+      : { name, kind: "hollow-link", target: facts.target };
   }
   if (facts.isDirectory) {
     return { name, kind: "directory", target: null };

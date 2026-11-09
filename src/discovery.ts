@@ -1,7 +1,7 @@
 import { readdir } from "node:fs/promises";
 import { basename, dirname, join, sep } from "node:path";
 
-const SKILL_MANIFEST = "SKILL.md";
+export const SKILL_MANIFEST = "SKILL.md";
 
 export type DiscoveredSkill = {
   /** the skill folder's basename */

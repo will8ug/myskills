@@ -5,7 +5,7 @@ import type { ListReport } from "./list.ts";
 
 /** Pure rendering of an entry kind as user-facing wording; classification stays structural. */
 export function describeEntryKind(kind: EntryKind): string {
-  return kind === "broken-link" ? "broken link" : kind;
+  return kind === "broken-link" ? "broken link" : kind === "hollow-link" ? "hollow link" : kind;
 }
 
 /** Pure rendering of a list report as output lines; printing and exit codes stay in the shell. */

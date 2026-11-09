@@ -41,6 +41,18 @@ test("broken links are labelled as broken, with the target when one is readable"
   ]);
 });
 
+test("hollow links are labelled as hollow, with the target when one is readable", () => {
+  const lines = reportLines({
+    skillsDirectory: "/repos/api/.agents/skills",
+    entries: [{ name: "moved", kind: "hollow-link", target: "/sources/moved" }],
+  });
+
+  assert.deepEqual(lines, [
+    "/repos/api/.agents/skills",
+    "  moved  hollow link -> /sources/moved",
+  ]);
+});
+
 test("a file entry is listed plainly with no arrow", () => {
   const lines = reportLines({
     skillsDirectory: "/repos/api/.agents/skills",
